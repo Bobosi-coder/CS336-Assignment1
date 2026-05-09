@@ -1,3 +1,8 @@
+# AI agent settings
+.claude/
+
+# output of our code
+artifact/
 # Training data
 data/
 
