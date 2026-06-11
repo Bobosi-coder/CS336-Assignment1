@@ -5,13 +5,20 @@ from collections.abc import Iterable
 from typing import IO, Any, BinaryIO
 
 import numpy.typing as npt
+from sympy import Li
 import torch
+import torch.nn as nn
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from yaml import Token
 
 from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
+from cs336_basics.basic_blocks import Linear, Embedding
+from cs336_basics.pre_norm_transformer_blocks import (
+    RMSNorm, Swiglu, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention,
+    MultiheadSelfAttention
+    )
 
 def run_linear(
     d_in: int,
@@ -31,6 +38,9 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
+    linear_block = Linear(d_in, d_out)
+    linear_block.load_state_dict({'weights' : weights})
+    return linear_block(in_features)
 
     raise NotImplementedError
 
@@ -53,6 +63,9 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
+    embedding_block = Embedding(vocab_size, d_model)
+    embedding_block.load_state_dict({'embedding_matrix' : weights})
+    return embedding_block(token_ids)
 
     raise NotImplementedError
 
@@ -86,6 +99,13 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
+    swiglu_block = Swiglu(d_model, d_ff)
+    swiglu_block.load_state_dict(
+        {'w_gate.weights' : w1_weight,
+         'w_up.weights' : w2_weight,
+         'w_down.weights' : w3_weight}
+    )
+    return swiglu_block(in_features)
     raise NotImplementedError
 
 
@@ -107,6 +127,7 @@ def run_scaled_dot_product_attention(
     Returns:
         Float[Tensor, " ... queries d_v"]: Output of SDPA
     """
+    return scaled_dot_product_attention(Q, K, V, mask)
     raise NotImplementedError
 
 
@@ -141,6 +162,14 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
+    mla = MultiheadSelfAttention(d_model, num_heads)
+    mla.load_state_dict({
+        "Wq.weights" : q_proj_weight,
+        'Wk.weights' : k_proj_weight,
+        'Wv.weights' : v_proj_weight,
+        'Wo.weights' : o_proj_weight
+    })
+    return mla(in_features)
     raise NotImplementedError
 
 
@@ -181,6 +210,15 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_model"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
+    mla = MultiheadSelfAttention(d_model=d_model, num_heads=num_heads, use_rope=True, 
+                                 max_seq_len=max_seq_len, theta = theta)
+    mla.load_state_dict({
+        "Wq.weights" : q_proj_weight,
+        'Wk.weights' : k_proj_weight,
+        'Wv.weights' : v_proj_weight,
+        'Wo.weights' : o_proj_weight
+    })
+    return mla(in_features, token_positions=token_positions)
     raise NotImplementedError
 
 
@@ -203,6 +241,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
+    rope_block = RotaryPositionalEmbedding(theta, d_k, max_seq_len)
+    return rope_block(in_query_or_key, token_positions)
     raise NotImplementedError
 
 
@@ -381,6 +421,10 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
+    rmsnorm_block = RMSNorm(d_model, eps)
+    rmsnorm_block.load_state_dict({'gain' : weights})
+    return rmsnorm_block(in_features)
+
     raise NotImplementedError
 
 
@@ -434,6 +478,7 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
+    return softmax(in_features, dim)
     raise NotImplementedError
 
 
