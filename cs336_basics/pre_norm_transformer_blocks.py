@@ -6,7 +6,7 @@
 from xmlrpc.client import boolean
 
 from numpy import full
-from sympy import Line
+from sympy import Li, Line
 import torch.nn as nn
 import torch
 from einops import rearrange, einsum
@@ -33,7 +33,7 @@ class RMSNorm(nn.Module):
         return result.to(in_dtype)
     
 class Swiglu(nn.Module):
-    def __init__(self, d_model: int, d_ff: int,
+    def __init__(self, d_model: int, d_ff: int | None = None,
                  device: torch.device | None = None, 
                  dtype: torch.dtype | None = None):
         super().__init__()
@@ -127,36 +127,44 @@ class MultiheadSelfAttention(nn.Module):
         # in_feature_dim = int(self.d_model)
         # out_feature_dim = int(self.d_k * self.num_heads)
 
-        self.Wq = Linear(self.d_model, self.d_k * self.num_heads)
-        self.Wk = Linear(self.d_model, self.d_k * self.num_heads)
-        self.Wv = Linear(self.d_model, self.d_k * self.num_heads)
+        self.Wqkv = Linear(self.d_model, self.d_k * self.num_heads * 3)
+        # self.Wq = Linear(self.d_model, self.d_k * self.num_heads)
+        # self.Wk = Linear(self.d_model, self.d_k * self.num_heads)
+        # self.Wv = Linear(self.d_model, self.d_k * self.num_heads)
         self.Wo = Linear(self.d_k * self.num_heads, self.d_model)
+
+        if self.max_seq_len is not None:
+            mask_shape_ones = torch.ones(max_seq_len, max_seq_len, dtype = torch.bool, device = self.device)
+            causal_mask = torch.tril(mask_shape_ones, 0)
+            self.register_buffer("causal_mask", causal_mask, persistent=False)
+        else:
+            mask_shape_ones = None            
+
+        if self.use_rope:
+            self.rope = RotaryPositionalEmbedding(self.theta, d_k= self.d_k, max_seq_len= self.max_seq_len,
+                                             device = self.device)
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor = None) -> torch.Tensor:
         seq_len = x.shape[-2]
-        mask_shape_ones = torch.ones(seq_len, seq_len, dtype= torch.bool)
-        mask = torch.tril(mask_shape_ones, 0)
+        if self.max_seq_len:
+            mask = self.causal_mask[:seq_len, :seq_len]
+        else:
+            mask_shape_ones = torch.ones(seq_len, seq_len, dtype = torch.bool, device = self.device)
+            mask = torch.tril(mask_shape_ones, 0)
 
-        Q = self.Wq(x)
-        K = self.Wk(x)
-        V = self.Wv(x)
-
-        Q_multihead = rearrange(Q, "... seq_len (num_heads d_k) -> ... num_heads seq_len d_k", 
-                              num_heads = self.num_heads)
-        K_multihead = rearrange(K, "... seq_len (num_heads d_k) -> ... num_heads seq_len d_k", 
-                              num_heads = self.num_heads)
-        V_multihead = rearrange(V, "... seq_len (num_heads d_k) -> ... num_heads seq_len d_k", 
-                              num_heads = self.num_heads)
+        # Q = self.Wq(x)
+        # K = self.Wk(x)
+        # V = self.Wv(x)
+        qkv = self.Wqkv(x)
+        Q, K, V = rearrange(qkv, "... seq_len (qkv num_heads d_k) -> qkv ... num_heads seq_len d_k",
+                            qkv = 3, num_heads = self.num_heads)
         
         # 是否使用 rope
         if self.use_rope:
-            d_k = Q_multihead.shape[-1]
-            rope = RotaryPositionalEmbedding(self.theta, d_k= d_k, max_seq_len= self.max_seq_len,
-                                             device = self.device)
-            Q_multihead = rope(Q_multihead, token_positions)
-            K_multihead = rope(K_multihead, token_positions)
+            Q = self.rope(Q, token_positions)
+            K = self.rope(K, token_positions)
 
-        concated_attention_multihead = scaled_dot_product_attention(Q_multihead, K_multihead, V_multihead, mask)
+        concated_attention_multihead = scaled_dot_product_attention(Q, K, V, mask)
 
         concated_attention = rearrange(concated_attention_multihead, 
                                        "... num_heads seq_len d_k -> ... seq_len (num_heads d_k)")
