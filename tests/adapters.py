@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
+from torchgen import context
 from yaml import Token
 
 from cs336_basics.train_bpe import train_bpe
@@ -19,6 +20,7 @@ from cs336_basics.pre_norm_transformer_blocks import (
     RMSNorm, Swiglu, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention,
     MultiheadSelfAttention
     )
+from cs336_basics.transformer import TransformerBlock, TransformerLM
 
 def run_linear(
     d_in: int,
@@ -314,6 +316,22 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
+    transformer_block = TransformerBlock(d_model, num_heads, d_ff, use_rope= True, 
+                                         max_seq_len= max_seq_len, theta= theta, 
+                                         device = in_features.device)
+    fused_atten_weights = torch.cat([weights['attn.q_proj.weight'],
+                                     weights["attn.k_proj.weight"],
+                                     weights['attn.v_proj.weight']], dim = 0)
+    transformer_block.load_state_dict({
+        'pre_attention_norm.gain': weights['ln1.weight'],
+        'mha.Wqkv.weights': fused_atten_weights,
+        'mha.Wo.weights': weights['attn.output_proj.weight'],
+        'pre_swiglu_norm.gain': weights['ln2.weight'],
+        'swiglu.w_gate.weights': weights['ffn.w1.weight'],
+        'swiglu.w_down.weights': weights['ffn.w3.weight'],
+        'swiglu.w_up.weights': weights['ffn.w2.weight']
+    })
+    return transformer_block(in_features)
     raise NotImplementedError
 
 
@@ -396,6 +414,57 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
+
+    device = in_indices.device
+    model = TransformerLM(
+        d_model = d_model,
+        num_heads=num_heads,
+        d_ff = d_ff,
+        vocab_size= vocab_size,
+        context_length=context_length,
+        num_layers= num_layers,
+        use_rope = True,
+        theta = rope_theta,
+        device = device
+    )
+
+    # 工业级自动化参数重组编织 (拒绝手动搬运)
+    custom_state_dict = {}
+    # 映射全局不变量层（注意对齐你自定义类的特殊参数名）
+    custom_state_dict["embedding.embedding_matrix"] = weights["token_embeddings.weight"]
+    custom_state_dict["ln_f.gain"] = weights["ln_final.weight"]
+    custom_state_dict["lm_head.weights"] = weights["lm_head.weight"]
+
+    # 用一个循环自动化横扫所有层（Layer-wise Auto-Mapping）
+    for i in range(num_layers):
+        # 映射两个归一化层
+        custom_state_dict[f"layers.{i}.pre_attention_norm.gain"] = weights[f"layers.{i}.ln1.weight"]
+        custom_state_dict[f"layers.{i}.pre_swiglu_norm.gain"] = weights[f"layers.{i}.ln2.weight"]
+        
+        # 映射 FFN (SwiGLU) 门控分支与常规分支
+        custom_state_dict[f"layers.{i}.swiglu.w_gate.weights"] = weights[f"layers.{i}.ffn.w1.weight"]
+        custom_state_dict[f"layers.{i}.swiglu.w_up.weights"] = weights[f"layers.{i}.ffn.w2.weight"]
+        custom_state_dict[f"layers.{i}.swiglu.w_down.weights"] = weights[f"layers.{i}.ffn.w3.weight"]
+        
+        # 映射 MHA 输出投影层
+        custom_state_dict[f"layers.{i}.mha.Wo.weights"] = weights[f"layers.{i}.attn.output_proj.weight"]
+        
+        # 自动合并离散的 Q, K, V 为工业级单次大矩阵乘法
+        q_w = weights[f"layers.{i}.attn.q_proj.weight"]
+        k_w = weights[f"layers.{i}.attn.k_proj.weight"]
+        v_w = weights[f"layers.{i}.attn.v_proj.weight"]
+        
+        # 沿着输出轴（行方向）强行编织拼接
+        custom_state_dict[f"layers.{i}.mha.Wqkv.weights"] = torch.cat([q_w, k_w, v_w], dim=0)
+
+    model.load_state_dict(custom_state_dict)
+
+    model.eval()
+    with torch.no_grad():
+        logits = model(in_indices)
+        
+    return logits
+
     raise NotImplementedError
 
 

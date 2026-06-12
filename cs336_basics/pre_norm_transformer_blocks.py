@@ -3,6 +3,7 @@
 
 """
 
+import token
 from xmlrpc.client import boolean
 
 from numpy import full
@@ -144,12 +145,16 @@ class MultiheadSelfAttention(nn.Module):
             self.rope = RotaryPositionalEmbedding(self.theta, d_k= self.d_k, max_seq_len= self.max_seq_len,
                                              device = self.device)
 
-    def forward(self, x: torch.Tensor, token_positions: torch.Tensor = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None = None) -> torch.Tensor:
         seq_len = x.shape[-2]
-        if self.max_seq_len:
+
+        if token_positions is None:
+            token_positions = torch.arange(seq_len, device = x.device)
+
+        if self.max_seq_len is not None:
             mask = self.causal_mask[:seq_len, :seq_len]
         else:
-            mask_shape_ones = torch.ones(seq_len, seq_len, dtype = torch.bool, device = self.device)
+            mask_shape_ones = torch.ones(seq_len, seq_len, dtype = torch.bool, device = x.device)
             mask = torch.tril(mask_shape_ones, 0)
 
         # Q = self.Wq(x)
