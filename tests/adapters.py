@@ -4,6 +4,7 @@ import os
 from collections.abc import Iterable
 from typing import IO, Any, BinaryIO
 
+from numpy import cross
 import numpy.typing as npt
 from sympy import Li
 import torch
@@ -21,6 +22,7 @@ from cs336_basics.pre_norm_transformer_blocks import (
     MultiheadSelfAttention
     )
 from cs336_basics.transformer import TransformerBlock, TransformerLM
+from cs336_basics.training_components import cross_entropy_loss, AdamW, learning_rate_schedule
 
 def run_linear(
     d_in: int,
@@ -564,6 +566,7 @@ def run_cross_entropy(
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
+    return cross_entropy_loss(inputs, targets)
     raise NotImplementedError
 
 
@@ -583,6 +586,7 @@ def get_adamw_cls() -> Any:
     """
     Returns a torch.optim.Optimizer that implements AdamW.
     """
+    return AdamW
     raise NotImplementedError
 
 
@@ -611,6 +615,9 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
+    return learning_rate_schedule(it, max_learning_rate, 
+                           min_learning_rate, 
+                           warmup_iters,cosine_cycle_iters)
     raise NotImplementedError
 
 
