@@ -64,9 +64,8 @@ def get_longest_token(vocab: dict[int, bytes]) -> tuple[int, bytes]:
     )
     return longest_token_id, longest_token_bytes
 
-def run_training() -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+def run_training(vocab_size: int = 10000) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     input_path = "data/TinyStoriesV2-GPT4-train.txt"
-    vocab_size = 32_000
     special_tokens =['<|endoftext|>']
 
     vocab, merges = train_bpe(

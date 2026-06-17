@@ -1,11 +1,8 @@
 from collections.abc import Iterable
 import json
-import os
 from typing import Iterator, Self
 import regex
 from tests.common import gpt2_bytes_to_unicode
-
-
 
 class Tokenizer():
     def __init__(self, vocab: dict[int, bytes], 

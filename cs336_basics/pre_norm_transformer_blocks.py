@@ -5,9 +5,7 @@
 
 import token
 from xmlrpc.client import boolean
-
-from numpy import full
-from sympy import Li, Line
+from jaxtyping import Float
 import torch.nn as nn
 import torch
 from einops import rearrange, einsum
@@ -32,7 +30,11 @@ class RMSNorm(nn.Module):
 
         result = x/rms * self.gain
         return result.to(in_dtype)
-    
+
+def silu(in_features: Float[torch.Tensor, " ..."]) -> Float[torch.Tensor, " ..."]:
+    return in_features / (1 + torch.exp(-in_features))
+
+
 class Swiglu(nn.Module):
     def __init__(self, d_model: int, d_ff: int | None = None,
                  device: torch.device | None = None, 
@@ -46,9 +48,9 @@ class Swiglu(nn.Module):
             d_ff = int(8/3 * d_model)
             self.d_ff = (d_ff + 63) // 64 * 64
 
-        self.w_gate = Linear(self.d_model, self.d_ff)
-        self.w_down = Linear(self.d_model, self.d_ff)
-        self.w_up = Linear(self.d_ff, self.d_model)
+        self.w_gate = Linear(self.d_model, self.d_ff, device= device, dtype = dtype)
+        self.w_down = Linear(self.d_model, self.d_ff, device = device, dtype = dtype)
+        self.w_up = Linear(self.d_ff, self.d_model, device = device, dtype = dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         gated_value = self.w_gate(x)
@@ -56,10 +58,11 @@ class Swiglu(nn.Module):
         return self.w_up(glu_value)
 
 class RotaryPositionalEmbedding(nn.Module):
-    def __init__(self, theta: float, d_k: int, max_seq_len: int, device: torch.device | None = None):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, 
+                 device: torch.device | None = None, dtype: torch.dtype | None = None):
         super().__init__()
         
-        seq_vector = torch.arange(max_seq_len, device = device)
+        seq_vector = torch.arange(max_seq_len, device = device, dtype= dtype)
         inv_freq = 1.0 / (theta ** (torch.arange(0, d_k, 2).float().to(device) / d_k))
 
         freq_matrix = torch.outer(seq_vector, inv_freq)
@@ -111,7 +114,7 @@ def scaled_dot_product_attention(
 class MultiheadSelfAttention(nn.Module):
     def __init__(self, d_model: int, num_heads: int, use_rope: bool = False,
                  max_seq_len: int = None, theta: float = None, 
-                 device: torch.device | None = None):
+                 device: torch.device | None = None, dtype: torch.dtype | None = None):
         super().__init__()
 
         assert d_model % num_heads == 0
@@ -128,11 +131,11 @@ class MultiheadSelfAttention(nn.Module):
         # in_feature_dim = int(self.d_model)
         # out_feature_dim = int(self.d_k * self.num_heads)
 
-        self.Wqkv = Linear(self.d_model, self.d_k * self.num_heads * 3)
+        self.Wqkv = Linear(self.d_model, self.d_k * self.num_heads * 3, dtype=dtype)
         # self.Wq = Linear(self.d_model, self.d_k * self.num_heads)
         # self.Wk = Linear(self.d_model, self.d_k * self.num_heads)
         # self.Wv = Linear(self.d_model, self.d_k * self.num_heads)
-        self.Wo = Linear(self.d_k * self.num_heads, self.d_model)
+        self.Wo = Linear(self.d_k * self.num_heads, self.d_model, dtype = dtype)
 
         if self.max_seq_len is not None:
             mask_shape_ones = torch.ones(max_seq_len, max_seq_len, dtype = torch.bool, device = self.device)

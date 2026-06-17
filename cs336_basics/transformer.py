@@ -10,15 +10,16 @@ class TransformerBlock(nn.Module):
     def __init__(self, d_model: int, num_heads: int, d_ff: int,
                  use_rope: bool = False,
                  max_seq_len: int = None, theta: float = None, 
-                 device: torch.device | None = None):
+                 device: torch.device | None = None,
+                 dtype: torch.dtype | None = None):
         super().__init__()
 
-        self.pre_attention_norm = RMSNorm(d_model=d_model)
+        self.pre_attention_norm = RMSNorm(d_model=d_model, device= device, dtype=dtype)
         self.mha = MultiheadSelfAttention(d_model, num_heads, 
                                                 use_rope= use_rope, max_seq_len= max_seq_len,
-                                                theta= theta, device= device)
-        self.pre_swiglu_norm = RMSNorm(d_model=d_model)
-        self.swiglu = Swiglu(d_model, d_ff, device=device)
+                                                theta= theta, device= device, dtype=dtype)
+        self.pre_swiglu_norm = RMSNorm(d_model=d_model, device=device, dtype=dtype)
+        self.swiglu = Swiglu(d_model, d_ff, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.mha(self.pre_attention_norm(x))
@@ -44,7 +45,7 @@ class TransformerLM(nn.Module):
         self.device = device
 
         self.embedding = Embedding(num_embeddings=vocab_size, embedding_dim=d_model,
-                                   device= device)
+                                   device= device, dtype = dtype)
         self.layers = nn.ModuleList([
             TransformerBlock(
                 d_model = d_model,
@@ -54,6 +55,7 @@ class TransformerLM(nn.Module):
                 theta = theta,
                 use_rope = use_rope,
                 device = device,
+                dtype = dtype
             )
             for _ in range(num_layers)
         ])

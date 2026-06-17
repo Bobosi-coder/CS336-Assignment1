@@ -1,13 +1,10 @@
 from typing import Callable
 
-from networkx import second_order_centrality
 import torch
-import torch.nn as nn
 from collections.abc import Callable, Iterable
 from typing import Optional
 from cs336_basics.pre_norm_transformer_blocks import *
 from cs336_basics.transformer import *
-import einops
 
 
 def cross_entropy_loss(predicted_logits : torch.Tensor,
@@ -127,3 +124,16 @@ def learning_rate_schedule(it: int,
     else:
         return min_learning_rate
 
+def gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+    grads = [p.grad for p in parameters if p.grad is not None]
+    if not grads:
+        return 
+    total_norm_sq = torch.sum(torch.stack([torch.sum(g * g) for g in grads]))
+    l2_norm = torch.sqrt(total_norm_sq).item()
+
+    if l2_norm > max_l2_norm:
+        clip_coef = max_l2_norm / (l2_norm + 1e-6)
+        for g in grads:
+            g.mul_(clip_coef)
+
+    

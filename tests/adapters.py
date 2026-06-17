@@ -4,7 +4,7 @@ import os
 from collections.abc import Iterable
 from typing import IO, Any, BinaryIO
 
-from numpy import cross
+from numpy import cross, gradient
 import numpy.typing as npt
 from sympy import Li
 import torch
@@ -18,11 +18,13 @@ from cs336_basics.train_bpe import train_bpe
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.basic_blocks import Linear, Embedding
 from cs336_basics.pre_norm_transformer_blocks import (
-    RMSNorm, Swiglu, RotaryPositionalEmbedding, softmax, scaled_dot_product_attention,
+    RMSNorm, Swiglu, RotaryPositionalEmbedding, silu,
+    softmax, scaled_dot_product_attention,
     MultiheadSelfAttention
     )
 from cs336_basics.transformer import TransformerBlock, TransformerLM
-from cs336_basics.training_components import cross_entropy_loss, AdamW, learning_rate_schedule
+from cs336_basics.training_components import cross_entropy_loss, AdamW, learning_rate_schedule, gradient_clipping
+from cs336_basics.training_loop import get_batch, save_checkpoint, load_checkpoint
 
 def run_linear(
     d_in: int,
@@ -508,6 +510,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
+    return silu(in_features)
     raise NotImplementedError
 
 
@@ -531,6 +534,7 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
+    return get_batch(dataset, batch_size, context_length, device)
     raise NotImplementedError
 
 
@@ -579,6 +583,7 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
+    return gradient_clipping(parameters, max_l2_norm)
     raise NotImplementedError
 
 
@@ -637,7 +642,8 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
+    save_checkpoint(model, optimizer, iteration,out)
+    # raise NotImplementedError
 
 
 def run_load_checkpoint(
@@ -658,6 +664,7 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
+    return load_checkpoint(src, model, optimizer)
     raise NotImplementedError
 
 
