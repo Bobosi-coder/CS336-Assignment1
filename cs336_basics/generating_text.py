@@ -4,6 +4,8 @@ from cs336_basics.pre_norm_transformer_blocks import softmax
 from cs336_basics.tokenizer import Tokenizer
 
 def temperature_scaling(logits: torch.Tensor, temperature: float) -> torch.Tensor:
+    assert temperature >= 0.0
+
     max_value, _ = torch.max(logits, dim = -1, keepdim=True)
     scaled_logits = (logits - max_value) / temperature
     scaled_logits_exp = torch.exp(scaled_logits)

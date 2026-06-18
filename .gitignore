@@ -172,4 +172,5 @@ cython_debug/
 
 .ruff_cache/
 *.zip
-checkpoint
+checkpoint/
+wandb/

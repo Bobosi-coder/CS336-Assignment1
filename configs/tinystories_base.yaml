@@ -1,0 +1,70 @@
+# =============================================================================
+# CS336 Assignment 1 — TinyStories 基线配置
+# 配合 cs336_basics/main.py 使用，所有 mode 共用这一份配置：
+#   python -m cs336_basics.main --mode <train_tokenizer|encode_data|train_lm|generate|all> \
+#                               --config configs/tinystories_base.yaml
+# =============================================================================
+
+# ---------- 路径与项目 -------------------------------------------------------
+artifact_dir:    artifact            # vocab / merges / token .npy 等产物目录
+checkpoint_dir:  checkpoint          # 模型 checkpoint 目录（generate 会从这里找最新的）
+proj_name:       cs336_tinystories_base   # wandb project 名
+run_name:        tinystories_smoke_5steps # wandb 单词 run 名字
+
+special_token:   "<|endoftext|>"     # 文档边界符 / eos 标记
+
+# 原始文本（txt）
+tokenizer_train_path: data/TinyStoriesV2-GPT4-train.txt   # 训 BPE 用的语料
+raw_train_path:       data/TinyStoriesV2-GPT4-train.txt   # encode_data 的训练集输入
+raw_val_path:         data/TinyStoriesV2-GPT4-valid.txt   # encode_data 的验证集输入
+
+# tokenizer 产物
+vocab_path:   artifact/TinyStories_vocab.json
+merges_path:  artifact/TinyStories_merges.txt
+
+# 编码后的 token 数组（train_lm 直接 mmap 加载这两个）
+train_path:   artifact/tinystories_train_tokens.npy
+val_path:     artifact/tinystories_val_tokens.npy
+
+# ---------- tokenizer / 数据 -------------------------------------------------
+vocab_size:   10000
+token_dtype:  int32          # 编码后落盘的 dtype；vocab<65536 时用 uint16 可省一半磁盘
+
+# ---------- 模型结构 ---------------------------------------------------------
+d_model:         512
+num_heads:       16
+d_ff:            1344         # ≈ 8/3 × d_model，向上取整到 64 的倍数
+num_layers:      4
+context_length:  256
+theta:           10000.0      # RoPE 频率超参数
+use_rope:        true
+model_dtype:     float32      # float32 / bfloat16 / float16
+
+# ---------- 优化器 (AdamW) ---------------------------------------------------
+lr:            0.0003
+beta_1:        0.9
+beta_2:        0.999
+eps:           1.0e-8
+weight_decay:  0.1
+max_grad_norm: 1.0            # 梯度裁剪的最大 norm
+
+# ---------- 学习率调度 (warmup + 余弦退火) -----------------------------------
+max_learning_rate:  0.0003    # 注意：要与上面的 lr 对齐，否则 warmup 后会跳变
+min_learning_rate:  0.00003
+warmup_iters:       200
+cosine_cycle_iters: 5000      # 通常设为 ≈ max_iters
+
+# ---------- 训练循环 ---------------------------------------------------------
+batch_size:     32
+max_iters:      101
+eval_interval:  100           # 每多少 step 在验证集上评估并记 wandb
+save_interval:  1000          # 每多少 step 存一次 checkpoint
+resume_from:    null          # 续训时填 checkpoint 路径，如 checkpoint/ckpt_it_3000.pt
+seed:           42
+
+# ---------- 生成 (generate mode) --------------------------------------------
+prompt:          "Once upon a time"
+max_new_tokens:  256
+temperature:     0.8          # 设为 0 则退化为贪心解码
+top_p:           0.9
+eos_token_id:    256          # 仅作兜底：main 实际以 tokenizer 查到的 <|endoftext|> id 为准
