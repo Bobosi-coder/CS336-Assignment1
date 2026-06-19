@@ -143,8 +143,9 @@ def training_loop(args):
             if it % args.eval_interval == 0:
                 with torch.no_grad():
                     model.eval()
-                    val_seq, val_ground_truth_seq = get_batch(val_data, batch_size=batch_size,
-                                                            context_length=context_length, device = device)
+                    val_batch = 20
+                    val_seq, val_ground_truth_seq = get_batch(val_data, batch_size=val_batch,
+                                                            context_length=512, device = device)
                     val_seq = val_seq.to(device)
                     val_ground_truth_seq = val_ground_truth_seq.to(device)
 
@@ -152,6 +153,7 @@ def training_loop(args):
                     val_loss = cross_entropy_loss(val_logits, val_ground_truth_seq)
                     
                     wall_clock_time = time.perf_counter() - start_time
+                    wall_clock_time_min = wall_clock_time / 60
 
                     tokens_processed = it * args.batch_size * args.context_length
                     tokens_per_second = tokens_processed / wall_clock_time
@@ -162,7 +164,8 @@ def training_loop(args):
                             'step': it,
                             'lr': opt.param_groups[0]['lr'],
                             'wall_clock_time_sec':wall_clock_time,
-                            "tokens_per_second": tokens_per_second,},
+                            "tokens_per_second": tokens_per_second,
+                            'wall_clock_time_min': wall_clock_time_min},
                             )
                     model.train()
 
