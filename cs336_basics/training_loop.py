@@ -145,7 +145,7 @@ def training_loop(args):
                     model.eval()
                     val_batch = 20
                     val_seq, val_ground_truth_seq = get_batch(val_data, batch_size=val_batch,
-                                                            context_length=512, device = device)
+                                                            context_length=context_length, device = device)
                     val_seq = val_seq.to(device)
                     val_ground_truth_seq = val_ground_truth_seq.to(device)
 
